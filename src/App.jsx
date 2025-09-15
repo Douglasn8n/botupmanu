@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { Button } from '@/components/ui/button.jsx'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card.jsx'
 import { Badge } from '@/components/ui/badge.jsx'
@@ -7,9 +7,114 @@ import { Textarea } from '@/components/ui/textarea.jsx'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select.jsx'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs.jsx'
 import { Label } from '@/components/ui/label.jsx'
-import { Plus, Search, MessageSquare, Bug, Zap, Clock, CheckCircle, AlertCircle, User, Bell } from 'lucide-react'
+import { Plus, Search, MessageSquare, Bug, Zap, Clock, CheckCircle, AlertCircle, User, Bell, LogOut } from 'lucide-react'
 import DemandDetails from './components/DemandDetails.jsx'
+import CompanyManagement from './components/CompanyManagement.jsx'
+import AdminLogin from './components/AdminLogin.jsx'
+import { cn } from '@/lib/utils.js'
 import './App.css'
+
+const ADMIN_CREDENTIALS = {
+  username: 'admin',
+  password: 'admin123',
+  name: 'Administrador',
+}
+
+const INITIAL_COMPANIES = [
+  {
+    id: 'company-1',
+    name: 'Acme Telecom',
+    description: 'Operadora de telecomunicações focada em automação de atendimento.',
+    createdAt: '2024-03-18T10:30:00.000Z',
+    users: [
+      {
+        id: 'company-1-user-1',
+        name: 'Joana Lima',
+        email: 'joana.lima@acmetelecom.com',
+        username: 'joana.lima',
+        password: 'Acme#2024',
+        createdAt: '2024-03-18T10:45:00.000Z',
+      },
+      {
+        id: 'company-1-user-2',
+        name: 'Pedro Silveira',
+        email: 'pedro.silveira@acmetelecom.com',
+        username: 'pedro.silveira',
+        password: 'Atendimento!9',
+        createdAt: '2024-04-02T09:12:00.000Z',
+      },
+    ],
+  },
+  {
+    id: 'company-2',
+    name: 'Inova Varejo',
+    description: 'Rede varejista com foco em experiências omnichannel.',
+    createdAt: '2024-05-05T16:05:00.000Z',
+    users: [
+      {
+        id: 'company-2-user-1',
+        name: 'Carla Mendes',
+        email: 'carla.mendes@inovavarejo.com',
+        username: 'carla.mendes',
+        password: 'Inova*2024',
+        createdAt: '2024-05-06T08:40:00.000Z',
+      },
+    ],
+  },
+]
+
+const generateId = (prefix) => `${prefix}-${Math.random().toString(36).slice(2, 8)}-${Date.now().toString(36)}`
+
+const normalizeForUsername = (value) => value
+  .normalize('NFD')
+  .replace(/[^\p{ASCII}]/gu, '')
+  .toLowerCase()
+  .replace(/[^a-z0-9]+/g, '.')
+  .replace(/\.+/g, '.')
+  .replace(/^\.+|\.+$/g, '')
+
+const generateUsername = (name, existingUsers) => {
+  const parts = name.trim().split(/\s+/).filter(Boolean)
+  let base = ''
+
+  if (parts.length === 0) {
+    base = 'usuario'
+  } else if (parts.length === 1) {
+    base = normalizeForUsername(parts[0])
+  } else {
+    base = normalizeForUsername(`${parts[0]}.${parts[parts.length - 1]}`)
+  }
+
+  if (!base) {
+    base = 'usuario'
+  }
+
+  let candidate = base
+  let counter = 1
+  const usedUsernames = new Set(existingUsers.map((user) => user.username))
+
+  while (usedUsernames.has(candidate)) {
+    candidate = `${base}${counter}`
+    counter += 1
+  }
+
+  return candidate
+}
+
+const generatePassword = (length = 10) => {
+  const characters = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789!@#$%&*?'
+  const cryptoProvider = typeof globalThis !== 'undefined' && globalThis.crypto?.getRandomValues
+    ? globalThis.crypto
+    : null
+
+  if (cryptoProvider) {
+    const randomValues = new Uint32Array(length)
+    cryptoProvider.getRandomValues(randomValues)
+    return Array.from(randomValues, (value) => characters[value % characters.length]).join('')
+  }
+
+  return Array.from({ length }, () => characters[Math.floor(Math.random() * characters.length)]).join('')
+}
 
 function App() {
   const [activeTab, setActiveTab] = useState('minhas-demandas')
@@ -19,6 +124,73 @@ function App() {
   const [isAdmin, setIsAdmin] = useState(false)
   const [selectedDemand, setSelectedDemand] = useState(null)
   const [selectedTipoDemanda, setSelectedTipoDemanda] = useState('')
+  const [authenticatedUser, setAuthenticatedUser] = useState(null)
+  const [companies, setCompanies] = useState(INITIAL_COMPANIES)
+
+  useEffect(() => {
+    if (!isAdmin && activeTab === 'empresas') {
+      setActiveTab('minhas-demandas')
+    }
+  }, [isAdmin, activeTab])
+
+  const handleLogin = (user) => {
+    setAuthenticatedUser(user)
+    setIsAdmin(true)
+    setActiveTab('empresas')
+  }
+
+  const handleLogout = () => {
+    setAuthenticatedUser(null)
+    setIsAdmin(false)
+    setSelectedDemand(null)
+    setActiveTab('minhas-demandas')
+    setSelectedTipoDemanda('')
+  }
+
+  const handleCreateCompany = ({ name, description }) => {
+    const newCompany = {
+      id: generateId('company'),
+      name,
+      description,
+      createdAt: new Date().toISOString(),
+      users: [],
+    }
+    setCompanies((previous) => [...previous, newCompany])
+  }
+
+  const handleCreateCompanyUser = (companyId, userData) => {
+    let createdCredentials = null
+    let companyFound = false
+
+    setCompanies((previous) =>
+      previous.map((company) => {
+        if (company.id !== companyId) {
+          return company
+        }
+
+        companyFound = true
+        const username = generateUsername(userData.name, company.users)
+        const password = generatePassword()
+        const newUser = {
+          id: generateId('user'),
+          name: userData.name,
+          email: userData.email,
+          username,
+          password,
+          createdAt: new Date().toISOString(),
+        }
+
+        createdCredentials = { username, password }
+
+        return {
+          ...company,
+          users: [...company.users, newUser],
+        }
+      })
+    )
+
+    return companyFound ? createdCredentials : null
+  }
 
   // Dados de exemplo para as demandas
   const [demandas, setDemandas] = useState([
@@ -122,7 +294,7 @@ function App() {
       tipo: formData.get('tipo'),
       status: 'novo',
       prioridade: formData.get('prioridade'),
-      cliente: 'Usuário Atual',
+      cliente: authenticatedUser?.name ?? 'Usuário Atual',
       chatbot: 'Sistema Geral', // Valor padrão já que removemos o campo
       dataCreacao: new Date().toISOString().split('T')[0],
       ultimaAtualizacao: new Date().toISOString().split('T')[0]
@@ -152,13 +324,55 @@ function App() {
   }
 
   const handleUpdateDemand = (updatedDemand) => {
-    setDemandas(demandas.map(demanda => 
-      demanda.id === updatedDemand.id 
+    setDemandas(demandas.map(demanda =>
+      demanda.id === updatedDemand.id
         ? { ...updatedDemand, ultimaAtualizacao: new Date().toISOString().split('T')[0] }
         : demanda
     ))
     setSelectedDemand(updatedDemand)
   }
+
+  if (!authenticatedUser) {
+    return (
+      <AdminLogin
+        onLogin={handleLogin}
+        credentials={ADMIN_CREDENTIALS}
+      />
+    )
+  }
+
+  const renderHeaderActions = () => (
+    <div className="flex items-center gap-3 sm:gap-4">
+      <Button
+        variant="outline"
+        size="sm"
+        onClick={() => setIsAdmin(!isAdmin)}
+        className={cn(
+          'whitespace-nowrap',
+          isAdmin ? 'border-orange-200 bg-orange-50 text-orange-700 hover:bg-orange-100' : ''
+        )}
+      >
+        {isAdmin ? 'Visualizar como cliente' : 'Visualizar como admin'}
+      </Button>
+      <Button variant="ghost" size="sm" className="relative">
+        <Bell className="h-4 w-4" />
+        <span className="absolute -top-1 -right-1 h-3 w-3 bg-red-500 rounded-full text-xs" />
+      </Button>
+      <div className="flex items-center gap-3">
+        <div className="text-right leading-tight">
+          <p className="text-sm font-medium text-gray-900">Olá, {authenticatedUser.name}</p>
+          <p className="text-xs text-gray-500">Usuário: {authenticatedUser.username}</p>
+        </div>
+        <div className="h-9 w-9 bg-blue-600 rounded-full flex items-center justify-center">
+          <User className="h-4 w-4 text-white" />
+        </div>
+      </div>
+      <Button variant="outline" size="sm" onClick={handleLogout} className="whitespace-nowrap">
+        <LogOut className="mr-2 h-4 w-4" />
+        Sair
+      </Button>
+    </div>
+  )
 
   // Se uma demanda está selecionada, mostrar os detalhes
   if (selectedDemand) {
@@ -172,24 +386,7 @@ function App() {
                 <MessageSquare className="h-8 w-8 text-blue-600 mr-3" />
                 <h1 className="text-xl font-semibold text-gray-900">Painel de Demandas de Chatbots</h1>
               </div>
-              <div className="flex items-center space-x-4">
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={() => setIsAdmin(!isAdmin)}
-                  className={isAdmin ? 'bg-orange-100 text-orange-800' : ''}
-                >
-                  {isAdmin ? 'Modo Admin' : 'Modo Cliente'}
-                </Button>
-                <Button variant="ghost" size="sm" className="relative">
-                  <Bell className="h-4 w-4" />
-                  <span className="absolute -top-1 -right-1 h-3 w-3 bg-red-500 rounded-full text-xs"></span>
-                </Button>
-                <span className="text-sm text-gray-600">Olá, {isAdmin ? 'Desenvolvedor' : 'Cliente'}</span>
-                <div className="h-8 w-8 bg-blue-600 rounded-full flex items-center justify-center">
-                  <User className="h-4 w-4 text-white" />
-                </div>
-              </div>
+              {renderHeaderActions()}
             </div>
           </div>
         </header>
@@ -217,24 +414,7 @@ function App() {
               <MessageSquare className="h-8 w-8 text-blue-600 mr-3" />
               <h1 className="text-xl font-semibold text-gray-900">Painel de Demandas de Chatbots</h1>
             </div>
-            <div className="flex items-center space-x-4">
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={() => setIsAdmin(!isAdmin)}
-                className={isAdmin ? 'bg-orange-100 text-orange-800' : ''}
-              >
-                {isAdmin ? 'Modo Admin' : 'Modo Cliente'}
-              </Button>
-              <Button variant="ghost" size="sm" className="relative">
-                <Bell className="h-4 w-4" />
-                <span className="absolute -top-1 -right-1 h-3 w-3 bg-red-500 rounded-full text-xs"></span>
-              </Button>
-              <span className="text-sm text-gray-600">Olá, {isAdmin ? 'Desenvolvedor' : 'Cliente'}</span>
-              <div className="h-8 w-8 bg-blue-600 rounded-full flex items-center justify-center">
-                <User className="h-4 w-4 text-white" />
-              </div>
-            </div>
+            {renderHeaderActions()}
           </div>
         </div>
       </header>
@@ -242,10 +422,11 @@ function App() {
       {/* Main Content */}
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
         <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
-          <TabsList className="grid w-full grid-cols-3">
+          <TabsList className={cn('grid w-full', isAdmin ? 'grid-cols-4' : 'grid-cols-3')}>
             <TabsTrigger value="minhas-demandas">Minhas Demandas</TabsTrigger>
             <TabsTrigger value="nova-demanda">Nova Demanda</TabsTrigger>
             <TabsTrigger value="visao-geral">Visão Geral</TabsTrigger>
+            {isAdmin && <TabsTrigger value="empresas">Empresas</TabsTrigger>}
           </TabsList>
 
           {/* Minhas Demandas */}
@@ -545,6 +726,15 @@ function App() {
               </CardContent>
             </Card>
           </TabsContent>
+          {isAdmin && (
+            <TabsContent value="empresas" className="space-y-6">
+              <CompanyManagement
+                companies={companies}
+                onCreateCompany={handleCreateCompany}
+                onCreateUser={handleCreateCompanyUser}
+              />
+            </TabsContent>
+          )}
         </Tabs>
       </main>
     </div>

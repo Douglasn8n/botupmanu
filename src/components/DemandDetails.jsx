@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card.jsx'
 import { Badge } from '@/components/ui/badge.jsx'
 import { Button } from '@/components/ui/button.jsx'
@@ -7,14 +7,14 @@ import { Textarea } from '@/components/ui/textarea.jsx'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select.jsx'
 import { Separator } from '@/components/ui/separator.jsx'
 import { Avatar, AvatarFallback } from '@/components/ui/avatar.jsx'
-import { 
-  MessageSquare, 
-  Clock, 
-  User, 
-  Calendar, 
-  Tag, 
-  AlertCircle, 
-  CheckCircle, 
+import {
+  MessageSquare,
+  Clock,
+  User,
+  Calendar,
+  Tag,
+  AlertCircle,
+  CheckCircle,
   Send,
   ArrowLeft,
   Edit,
@@ -22,149 +22,448 @@ import {
   X,
   Plus,
   Bug,
-  Zap
+  Zap,
+  Loader2,
+  Trash2
 } from 'lucide-react'
+import { useApi } from '@/hooks/use-api.js'
+import { toast } from 'sonner'
 
-const DemandDetails = ({ demand, onBack, onUpdateDemand, isAdmin = false }) => {
+const getDemandId = (demand) => demand?.id ?? demand?._id ?? demand?.uuid ?? demand?.demandId ?? demand?.codigo
+
+const mapDemandToEditable = (demand) => ({
+  titulo: demand?.titulo ?? demand?.title ?? '',
+  descricao: demand?.descricao ?? demand?.description ?? '',
+  tipo: demand?.tipo ?? demand?.type ?? 'nova-funcionalidade',
+  chatbot: demand?.chatbot ?? demand?.bot ?? ''
+})
+
+const extractComments = (demand) => {
+  if (!demand) {
+    return []
+  }
+
+  if (Array.isArray(demand.comentarios)) {
+    return demand.comentarios
+  }
+
+  if (Array.isArray(demand.comments)) {
+    return demand.comments
+  }
+
+  if (Array.isArray(demand.historico)) {
+    return demand.historico
+  }
+
+  return []
+}
+
+const resolveDemandFromResponse = (payload, fallback) => {
+  if (!payload) {
+    return fallback
+  }
+
+  if (payload.demand) {
+    return payload.demand
+  }
+
+  if (payload.demanda) {
+    return payload.demanda
+  }
+
+  if (payload.data) {
+    const nested = resolveDemandFromResponse(payload.data, fallback)
+    if (nested) {
+      return nested
+    }
+  }
+
+  if (Array.isArray(payload.demands) && payload.demands.length > 0) {
+    return payload.demands.at(-1)
+  }
+
+  if (Array.isArray(payload.demandas) && payload.demandas.length > 0) {
+    return payload.demandas.at(-1)
+  }
+
+  if (typeof payload === 'object' && (payload.titulo || payload.title || payload.status || payload.prioridade)) {
+    return payload
+  }
+
+  return fallback
+}
+
+const resolveCommentFromResponse = (payload) => {
+  if (!payload) {
+    return null
+  }
+
+  if (payload.comment) {
+    return payload.comment
+  }
+
+  if (payload.comentario && typeof payload.comentario === 'object') {
+    return payload.comentario
+  }
+
+  if (payload.data) {
+    return resolveCommentFromResponse(payload.data)
+  }
+
+  if (Array.isArray(payload.comments) && payload.comments.length > 0) {
+    return payload.comments.at(-1)
+  }
+
+  if (Array.isArray(payload.comentarios) && payload.comentarios.length > 0) {
+    return payload.comentarios.at(-1)
+  }
+
+  if (typeof payload === 'object' && (payload.content || payload.comentario || payload.mensagem)) {
+    return payload
+  }
+
+  return null
+}
+
+const getCommentAuthor = (comment) => comment?.author ?? comment?.autor ?? comment?.nome ?? 'Usuário'
+
+const getCommentTimestamp = (comment) => comment?.timestamp ?? comment?.data ?? comment?.createdAt ?? comment?.created_at
+
+const getCommentContent = (comment) => comment?.content ?? comment?.comentario ?? comment?.mensagem ?? comment?.texto ?? ''
+
+const isCommentFromAdmin = (comment) => Boolean(comment?.isAdmin ?? comment?.admin ?? comment?.autorEhAdmin ?? false)
+
+const getCommentId = (comment, index) => {
+  return (
+    comment?.id ??
+    comment?._id ??
+    comment?.uuid ??
+    comment?.commentId ??
+    comment?.codigo ??
+    `${getCommentTimestamp(comment) ?? 'comment'}-${index}`
+  )
+}
+
+const formatLabel = (value, fallback = '') => {
+  if (!value) {
+    return fallback
+  }
+  return String(value).replace(/-/g, ' ')
+}
+
+const formatDate = (value) => {
+  if (!value) {
+    return 'Não informado'
+  }
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) {
+    return 'Não informado'
+  }
+  return date.toLocaleDateString('pt-BR')
+}
+
+const formatDateTime = (value) => {
+  if (!value) {
+    return 'Agora'
+  }
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) {
+    return String(value)
+  }
+  return date.toLocaleString('pt-BR')
+}
+
+const DemandDetails = ({
+  demand: initialDemand,
+  companyId,
+  token,
+  onBack,
+  onUpdateDemand,
+  onRemoveDemand,
+  isAdmin = false
+}) => {
+  const [demand, setDemand] = useState(initialDemand)
   const [newComment, setNewComment] = useState('')
   const [isEditing, setIsEditing] = useState(false)
-  const [editedDemand, setEditedDemand] = useState({
-    titulo: demand.titulo,
-    descricao: demand.descricao,
-    tipo: demand.tipo,
-    chatbot: demand.chatbot
-  })
-  const [comments, setComments] = useState([
-    {
-      id: 1,
-      author: 'João Silva',
-      content: 'Obrigado por criar esta demanda. Vamos analisar e retornar em breve.',
-      timestamp: '2024-01-16 10:30',
-      isAdmin: true
-    },
-    {
-      id: 2,
-      author: 'Maria Santos',
-      content: 'Gostaria de adicionar que seria interessante incluir também notificações por email.',
-      timestamp: '2024-01-17 14:15',
-      isAdmin: false
+  const [editedDemand, setEditedDemand] = useState(mapDemandToEditable(initialDemand))
+  const [comments, setComments] = useState(extractComments(initialDemand))
+
+  const { request: updateDemandRequest, loading: updatingDemand } = useApi({ token })
+  const { request: commentRequest, loading: submittingComment } = useApi({ token })
+  const { request: deleteDemandRequest, loading: deletingDemand } = useApi({ token })
+
+  useEffect(() => {
+    setDemand(initialDemand)
+  }, [initialDemand])
+
+  useEffect(() => {
+    setEditedDemand(mapDemandToEditable(demand))
+    setComments(extractComments(demand))
+    setIsEditing(false)
+  }, [demand])
+
+  const demandId = getDemandId(demand)
+
+  const buildDemandEndpoint = useCallback(() => {
+    if (!companyId || !demandId) {
+      return null
     }
-  ])
+    return `admin/companies/${companyId}/demands/${demandId}`
+  }, [companyId, demandId])
+
+  const handleDemandUpdate = useCallback(async (payload, successMessage) => {
+    const endpoint = buildDemandEndpoint()
+
+    if (!endpoint) {
+      toast.error('Não foi possível identificar a demanda selecionada.')
+      return null
+    }
+
+    try {
+      const response = await updateDemandRequest({
+        endpoint,
+        method: 'PATCH',
+        data: payload
+      })
+
+      let updatedDemand = resolveDemandFromResponse(response, null)
+      if (!updatedDemand) {
+        updatedDemand = demand ? { ...demand, ...payload } : payload
+      }
+
+      setDemand(updatedDemand)
+      onUpdateDemand?.(updatedDemand)
+      toast.success(successMessage)
+      return updatedDemand
+    } catch (error) {
+      toast.error(error?.message ?? 'Não foi possível atualizar a demanda selecionada.')
+      return null
+    }
+  }, [buildDemandEndpoint, demand, onUpdateDemand, updateDemandRequest])
+
+  const handleStatusChange = (newStatus) => {
+    handleDemandUpdate({ status: newStatus, situacao: newStatus }, 'Status atualizado com sucesso!')
+  }
+
+  const handlePriorityChange = (newPriority) => {
+    handleDemandUpdate({ prioridade: newPriority, priority: newPriority }, 'Prioridade atualizada com sucesso!')
+  }
+
+  const handleSaveEdit = async () => {
+    const titulo = editedDemand.titulo.trim()
+    const descricao = editedDemand.descricao.trim()
+
+    if (!titulo || !descricao) {
+      toast.error('Informe título e descrição para salvar as alterações.')
+      return
+    }
+
+    const updated = await handleDemandUpdate({
+      titulo,
+      title: titulo,
+      descricao,
+      description: descricao,
+      tipo: editedDemand.tipo,
+      type: editedDemand.tipo,
+      chatbot: editedDemand.chatbot
+    }, 'Demanda atualizada com sucesso!')
+
+    if (updated) {
+      setIsEditing(false)
+    }
+  }
+
+  const handleCancelEdit = () => {
+    setEditedDemand(mapDemandToEditable(demand))
+    setIsEditing(false)
+  }
+
+  const handleAddComment = async () => {
+    const trimmedComment = newComment.trim()
+    if (!trimmedComment) {
+      return
+    }
+
+    const endpoint = buildDemandEndpoint()
+    if (!endpoint) {
+      toast.error('Não foi possível identificar a demanda selecionada.')
+      return
+    }
+
+    try {
+      const response = await commentRequest({
+        endpoint: `${endpoint}/comments`,
+        method: 'POST',
+        data: {
+          comentario: trimmedComment,
+          content: trimmedComment,
+          mensagem: trimmedComment,
+          autor: isAdmin ? 'Administrador' : 'Cliente',
+          author: isAdmin ? 'Administrador' : 'Cliente',
+          isAdmin
+        }
+      })
+
+      const updatedDemand = resolveDemandFromResponse(response, null)
+      const createdComment = resolveCommentFromResponse(response)
+
+      if (updatedDemand) {
+        setDemand(updatedDemand)
+        onUpdateDemand?.(updatedDemand)
+        setComments(extractComments(updatedDemand))
+      } else if (createdComment) {
+        setComments((previous) => [...previous, createdComment])
+      } else {
+        setComments((previous) => [
+          ...previous,
+          {
+            id: Date.now(),
+            author: isAdmin ? 'Administrador' : 'Cliente',
+            content: trimmedComment,
+            timestamp: new Date().toISOString(),
+            isAdmin
+          }
+        ])
+      }
+
+      setNewComment('')
+      toast.success('Comentário enviado com sucesso!')
+    } catch (error) {
+      toast.error(error?.message ?? 'Não foi possível registrar o comentário.')
+    }
+  }
+
+  const handleDeleteDemand = async () => {
+    const endpoint = buildDemandEndpoint()
+    if (!endpoint) {
+      toast.error('Não foi possível identificar a demanda selecionada.')
+      return
+    }
+
+    try {
+      await deleteDemandRequest({ endpoint, method: 'DELETE' })
+      toast.success('Demanda removida com sucesso!')
+      onRemoveDemand?.(demand)
+      onBack?.()
+    } catch (error) {
+      toast.error(error?.message ?? 'Não foi possível remover a demanda selecionada.')
+    }
+  }
+
+  if (!demand) {
+    return (
+      <div className="rounded-md border border-dashed border-muted-foreground/30 p-6 text-center text-sm text-muted-foreground">
+        Nenhuma demanda selecionada no momento.
+      </div>
+    )
+  }
+
+  const demandStatus = demand?.status ?? demand?.situacao ?? 'novo'
+  const demandPriority = demand?.prioridade ?? demand?.priority ?? 'media'
+  const demandType = demand?.tipo ?? demand?.type ?? 'nova-funcionalidade'
+  const demandTitle = demand?.titulo ?? demand?.title ?? 'Demanda sem título'
+  const demandDescription = demand?.descricao ?? demand?.description ?? 'Sem descrição fornecida.'
+  const demandClient = demand?.cliente ?? demand?.client ?? 'Não informado'
+  const demandChatbot = demand?.chatbot ?? demand?.bot ?? 'Não informado'
+  const demandCreatedAt = demand?.dataCreacao ?? demand?.createdAt ?? demand?.created_at
 
   const getStatusIcon = (status) => {
     switch (status) {
-      case 'novo': return <AlertCircle className="h-4 w-4" />
-      case 'em-analise': return <Clock className="h-4 w-4" />
-      case 'em-desenvolvimento': return <Clock className="h-4 w-4" />
-      case 'aguardando-feedback': return <MessageSquare className="h-4 w-4" />
-      case 'concluido': return <CheckCircle className="h-4 w-4" />
-      default: return <Clock className="h-4 w-4" />
+      case 'novo':
+        return <AlertCircle className="h-4 w-4" />
+      case 'em-analise':
+        return <Clock className="h-4 w-4" />
+      case 'em-desenvolvimento':
+        return <Clock className="h-4 w-4" />
+      case 'aguardando-feedback':
+        return <MessageSquare className="h-4 w-4" />
+      case 'concluido':
+        return <CheckCircle className="h-4 w-4" />
+      default:
+        return <Clock className="h-4 w-4" />
     }
   }
 
   const getStatusColor = (status) => {
     switch (status) {
-      case 'novo': return 'bg-blue-100 text-blue-800'
-      case 'em-analise': return 'bg-yellow-100 text-yellow-800'
-      case 'em-desenvolvimento': return 'bg-orange-100 text-orange-800'
-      case 'aguardando-feedback': return 'bg-purple-100 text-purple-800'
-      case 'concluido': return 'bg-green-100 text-green-800'
-      default: return 'bg-gray-100 text-gray-800'
+      case 'novo':
+        return 'bg-blue-100 text-blue-800'
+      case 'em-analise':
+        return 'bg-yellow-100 text-yellow-800'
+      case 'em-desenvolvimento':
+        return 'bg-orange-100 text-orange-800'
+      case 'aguardando-feedback':
+        return 'bg-purple-100 text-purple-800'
+      case 'concluido':
+        return 'bg-green-100 text-green-800'
+      default:
+        return 'bg-gray-100 text-gray-800'
     }
   }
 
   const getPrioridadeColor = (prioridade) => {
     switch (prioridade) {
-      case 'baixa': return 'bg-gray-100 text-gray-800'
-      case 'media': return 'bg-blue-100 text-blue-800'
-      case 'alta': return 'bg-orange-100 text-orange-800'
-      case 'urgente': return 'bg-red-100 text-red-800'
-      default: return 'bg-gray-100 text-gray-800'
+      case 'baixa':
+        return 'bg-gray-100 text-gray-800'
+      case 'media':
+        return 'bg-blue-100 text-blue-800'
+      case 'alta':
+        return 'bg-orange-100 text-orange-800'
+      case 'urgente':
+        return 'bg-red-100 text-red-800'
+      default:
+        return 'bg-gray-100 text-gray-800'
     }
   }
 
   const getTipoIcon = (tipo) => {
     switch (tipo) {
-      case 'nova-funcionalidade': return <Plus className="h-4 w-4" />
-      case 'correcao-erro': return <Bug className="h-4 w-4" />
-      case 'alteracao': return <Bug className="h-4 w-4" />
-      case 'otimizacao': return <Zap className="h-4 w-4" />
-      default: return <MessageSquare className="h-4 w-4" />
+      case 'nova-funcionalidade':
+        return <Plus className="h-4 w-4" />
+      case 'correcao-erro':
+        return <Bug className="h-4 w-4" />
+      case 'alteracao':
+        return <Bug className="h-4 w-4" />
+      case 'otimizacao':
+        return <Zap className="h-4 w-4" />
+      default:
+        return <MessageSquare className="h-4 w-4" />
     }
-  }
-
-  const handleAddComment = () => {
-    if (newComment.trim()) {
-      const comment = {
-        id: comments.length + 1,
-        author: isAdmin ? 'Desenvolvedor' : 'Cliente',
-        content: newComment,
-        timestamp: new Date().toLocaleString('pt-BR'),
-        isAdmin: isAdmin
-      }
-      setComments([...comments, comment])
-      setNewComment('')
-    }
-  }
-
-  const handleStatusChange = (newStatus) => {
-    onUpdateDemand({ ...demand, status: newStatus })
-  }
-
-  const handlePriorityChange = (newPriority) => {
-    onUpdateDemand({ ...demand, prioridade: newPriority })
-  }
-
-  const handleSaveEdit = () => {
-    onUpdateDemand({ ...demand, ...editedDemand })
-    setIsEditing(false)
-  }
-
-  const handleCancelEdit = () => {
-    setEditedDemand({
-      titulo: demand.titulo,
-      descricao: demand.descricao,
-      tipo: demand.tipo,
-      chatbot: demand.chatbot
-    })
-    setIsEditing(false)
   }
 
   return (
     <div className="space-y-6">
-      {/* Header */}
       <div className="flex items-center justify-between">
         <Button variant="ghost" onClick={onBack} className="flex items-center">
-          <ArrowLeft className="h-4 w-4 mr-2" />
+          <ArrowLeft className="mr-2 h-4 w-4" />
           Voltar
         </Button>
         <div className="flex items-center space-x-2">
-          <Badge className={getStatusColor(demand.status)}>
-            {getStatusIcon(demand.status)}
-            <span className="ml-1 capitalize">{demand.status.replace('-', ' ')}</span>
+          <Badge className={getStatusColor(demandStatus)}>
+            {getStatusIcon(demandStatus)}
+            <span className="ml-1 capitalize">{formatLabel(demandStatus)}</span>
           </Badge>
           <Badge variant="secondary" className="flex items-center space-x-1">
-            {getTipoIcon(demand.tipo)}
-            <span className="capitalize">{demand.tipo.replace('-', ' ')}</span>
+            {getTipoIcon(demandType)}
+            <span className="capitalize">{formatLabel(demandType)}</span>
           </Badge>
-          <Badge variant="outline" className={getPrioridadeColor(demand.prioridade)}>
-            {demand.prioridade}
+          <Badge variant="outline" className={getPrioridadeColor(demandPriority)}>
+            {formatLabel(demandPriority)}
           </Badge>
         </div>
       </div>
 
-      {/* Informações Principais */}
       <Card>
         <CardHeader>
           <div className="flex items-start justify-between">
-            <div className="space-y-2 flex-1">
+            <div className="flex-1 space-y-2">
               {isEditing ? (
                 <div className="space-y-4">
                   <div>
                     <label className="text-sm font-medium">Título</label>
                     <Input
                       value={editedDemand.titulo}
-                      onChange={(e) => setEditedDemand({...editedDemand, titulo: e.target.value})}
+                      onChange={(event) => setEditedDemand((state) => ({ ...state, titulo: event.target.value }))}
                       className="text-xl font-semibold"
                     />
                   </div>
@@ -172,34 +471,34 @@ const DemandDetails = ({ demand, onBack, onUpdateDemand, isAdmin = false }) => {
                     <label className="text-sm font-medium">Descrição</label>
                     <Textarea
                       value={editedDemand.descricao}
-                      onChange={(e) => setEditedDemand({...editedDemand, descricao: e.target.value})}
+                      onChange={(event) => setEditedDemand((state) => ({ ...state, descricao: event.target.value }))}
                       rows={3}
                     />
                   </div>
                 </div>
               ) : (
                 <>
-                  <CardTitle className="text-2xl">{demand.titulo}</CardTitle>
-                  <CardDescription className="text-base">{demand.descricao}</CardDescription>
+                  <CardTitle className="text-2xl">{demandTitle}</CardTitle>
+                  <CardDescription className="text-base">{demandDescription}</CardDescription>
                 </>
               )}
             </div>
             {isAdmin && (
-              <div className="flex items-center space-x-2 ml-4">
+              <div className="ml-4 flex items-center space-x-2">
                 {isEditing ? (
                   <>
-                    <Button variant="outline" size="sm" onClick={handleSaveEdit}>
-                      <Save className="h-4 w-4 mr-2" />
+                    <Button variant="outline" size="sm" onClick={handleSaveEdit} disabled={updatingDemand}>
+                      {updatingDemand ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Save className="mr-2 h-4 w-4" />}
                       Salvar
                     </Button>
-                    <Button variant="ghost" size="sm" onClick={handleCancelEdit}>
-                      <X className="h-4 w-4 mr-2" />
+                    <Button variant="ghost" size="sm" onClick={handleCancelEdit} disabled={updatingDemand}>
+                      <X className="mr-2 h-4 w-4" />
                       Cancelar
                     </Button>
                   </>
                 ) : (
                   <Button variant="outline" size="sm" onClick={() => setIsEditing(true)}>
-                    <Edit className="h-4 w-4 mr-2" />
+                    <Edit className="mr-2 h-4 w-4" />
                     Editar
                   </Button>
                 )}
@@ -208,35 +507,26 @@ const DemandDetails = ({ demand, onBack, onUpdateDemand, isAdmin = false }) => {
           </div>
         </CardHeader>
         <CardContent>
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+          <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
             <div className="flex items-center space-x-2">
               <User className="h-4 w-4 text-gray-500" />
               <div>
                 <p className="text-sm font-medium">Cliente</p>
-                <p className="text-sm text-gray-600">{demand.cliente}</p>
+                <p className="text-sm text-gray-600">{demandClient}</p>
               </div>
             </div>
             <div className="flex items-center space-x-2">
               <MessageSquare className="h-4 w-4 text-gray-500" />
-              <div>
+              <div className="min-w-0">
                 <p className="text-sm font-medium">Chatbot</p>
                 {isEditing ? (
-                  <Select 
-                    value={editedDemand.chatbot} 
-                    onValueChange={(value) => setEditedDemand({...editedDemand, chatbot: value})}
-                  >
-                    <SelectTrigger className="w-full">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="Bot Vendas">Bot Vendas</SelectItem>
-                      <SelectItem value="Bot E-commerce">Bot E-commerce</SelectItem>
-                      <SelectItem value="Bot Atendimento">Bot Atendimento</SelectItem>
-                      <SelectItem value="Bot Suporte">Bot Suporte</SelectItem>
-                    </SelectContent>
-                  </Select>
+                  <Input
+                    value={editedDemand.chatbot}
+                    onChange={(event) => setEditedDemand((state) => ({ ...state, chatbot: event.target.value }))}
+                    placeholder="Nome do chatbot"
+                  />
                 ) : (
-                  <p className="text-sm text-gray-600">{demand.chatbot}</p>
+                  <p className="text-sm text-gray-600">{demandChatbot}</p>
                 )}
               </div>
             </div>
@@ -245,22 +535,22 @@ const DemandDetails = ({ demand, onBack, onUpdateDemand, isAdmin = false }) => {
               <div>
                 <p className="text-sm font-medium">Tipo</p>
                 {isEditing ? (
-                  <Select 
-                    value={editedDemand.tipo} 
-                    onValueChange={(value) => setEditedDemand({...editedDemand, tipo: value})}
+                  <Select
+                    value={editedDemand.tipo}
+                    onValueChange={(value) => setEditedDemand((state) => ({ ...state, tipo: value }))}
                   >
                     <SelectTrigger className="w-full">
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="nova-funcionalidade">Nova Funcionalidade</SelectItem>
-                      <SelectItem value="correcao-erro">Correção de Erro</SelectItem>
+                      <SelectItem value="nova-funcionalidade">Nova funcionalidade</SelectItem>
+                      <SelectItem value="correcao-erro">Correção de erro</SelectItem>
                       <SelectItem value="alteracao">Alteração</SelectItem>
                       <SelectItem value="otimizacao">Otimização</SelectItem>
                     </SelectContent>
                   </Select>
                 ) : (
-                  <p className="text-sm text-gray-600 capitalize">{demand.tipo.replace('-', ' ')}</p>
+                  <p className="text-sm text-gray-600 capitalize">{formatLabel(demandType)}</p>
                 )}
               </div>
             </div>
@@ -268,34 +558,32 @@ const DemandDetails = ({ demand, onBack, onUpdateDemand, isAdmin = false }) => {
               <Calendar className="h-4 w-4 text-gray-500" />
               <div>
                 <p className="text-sm font-medium">Criado em</p>
-                <p className="text-sm text-gray-600">
-                  {new Date(demand.dataCreacao).toLocaleDateString('pt-BR')}
-                </p>
+                <p className="text-sm text-gray-600">{formatDate(demandCreatedAt)}</p>
               </div>
             </div>
           </div>
         </CardContent>
       </Card>
 
-      {/* Controles do Admin */}
       {isAdmin && (
         <Card>
           <CardHeader>
-            <CardTitle>Gerenciar Demanda</CardTitle>
+            <CardTitle>Gerenciar demanda</CardTitle>
+            <CardDescription>Atualize o status, prioridade ou remova esta demanda.</CardDescription>
           </CardHeader>
-          <CardContent>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <CardContent className="space-y-4">
+            <div className="grid gap-4 md:grid-cols-2">
               <div className="space-y-2">
                 <label className="text-sm font-medium">Status</label>
-                <Select value={demand.status} onValueChange={handleStatusChange}>
+                <Select value={demandStatus} onValueChange={handleStatusChange} disabled={updatingDemand}>
                   <SelectTrigger>
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
                     <SelectItem value="novo">Novo</SelectItem>
-                    <SelectItem value="em-analise">Em Análise</SelectItem>
-                    <SelectItem value="em-desenvolvimento">Em Desenvolvimento</SelectItem>
-                    <SelectItem value="aguardando-feedback">Aguardando Feedback</SelectItem>
+                    <SelectItem value="em-analise">Em análise</SelectItem>
+                    <SelectItem value="em-desenvolvimento">Em desenvolvimento</SelectItem>
+                    <SelectItem value="aguardando-feedback">Aguardando feedback</SelectItem>
                     <SelectItem value="concluido">Concluído</SelectItem>
                     <SelectItem value="cancelado">Cancelado</SelectItem>
                   </SelectContent>
@@ -303,7 +591,7 @@ const DemandDetails = ({ demand, onBack, onUpdateDemand, isAdmin = false }) => {
               </div>
               <div className="space-y-2">
                 <label className="text-sm font-medium">Prioridade</label>
-                <Select value={demand.prioridade} onValueChange={handlePriorityChange}>
+                <Select value={demandPriority} onValueChange={handlePriorityChange} disabled={updatingDemand}>
                   <SelectTrigger>
                     <SelectValue />
                   </SelectTrigger>
@@ -316,53 +604,69 @@ const DemandDetails = ({ demand, onBack, onUpdateDemand, isAdmin = false }) => {
                 </Select>
               </div>
             </div>
+
+            <Separator />
+
+            <Button variant="destructive" onClick={handleDeleteDemand} disabled={deletingDemand}>
+              {deletingDemand ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Trash2 className="mr-2 h-4 w-4" />}
+              Remover demanda
+            </Button>
           </CardContent>
         </Card>
       )}
 
-      {/* Comentários */}
       <Card>
         <CardHeader>
-          <CardTitle>Comentários e Histórico</CardTitle>
+          <CardTitle>Comentários e histórico</CardTitle>
         </CardHeader>
         <CardContent className="space-y-4">
-          {/* Lista de Comentários */}
           <div className="space-y-4">
-            {comments.map((comment) => (
-              <div key={comment.id} className="flex space-x-3">
-                <Avatar className="h-8 w-8">
-                  <AvatarFallback>
-                    {comment.author.split(' ').map(n => n[0]).join('')}
-                  </AvatarFallback>
-                </Avatar>
-                <div className="flex-1 space-y-1">
-                  <div className="flex items-center space-x-2">
-                    <p className="text-sm font-medium">{comment.author}</p>
-                    {comment.isAdmin && (
-                      <Badge variant="secondary" className="text-xs">Admin</Badge>
-                    )}
-                    <p className="text-xs text-gray-500">{comment.timestamp}</p>
+            {comments.length === 0 ? (
+              <p className="text-sm text-muted-foreground">Nenhum comentário registrado até o momento.</p>
+            ) : (
+              comments.map((comment, index) => {
+                const author = getCommentAuthor(comment)
+                const initials = author
+                  .split(' ')
+                  .filter(Boolean)
+                  .map((word) => word[0]?.toUpperCase())
+                  .join('')
+                  .slice(0, 2)
+
+                return (
+                  <div key={getCommentId(comment, index)} className="flex space-x-3">
+                    <Avatar className="h-8 w-8">
+                      <AvatarFallback>{initials || 'US'}</AvatarFallback>
+                    </Avatar>
+                    <div className="flex-1 space-y-1">
+                      <div className="flex items-center space-x-2">
+                        <p className="text-sm font-medium">{author}</p>
+                        {isCommentFromAdmin(comment) && (
+                          <Badge variant="secondary" className="text-xs">Admin</Badge>
+                        )}
+                        <p className="text-xs text-gray-500">{formatDateTime(getCommentTimestamp(comment))}</p>
+                      </div>
+                      <p className="text-sm text-gray-700">{getCommentContent(comment)}</p>
+                    </div>
                   </div>
-                  <p className="text-sm text-gray-700">{comment.content}</p>
-                </div>
-              </div>
-            ))}
+                )
+              })
+            )}
           </div>
 
           <Separator />
 
-          {/* Novo Comentário */}
           <div className="space-y-3">
-            <label className="text-sm font-medium">Adicionar Comentário</label>
+            <label className="text-sm font-medium">Adicionar comentário</label>
             <Textarea
               placeholder="Digite seu comentário..."
               value={newComment}
-              onChange={(e) => setNewComment(e.target.value)}
+              onChange={(event) => setNewComment(event.target.value)}
               rows={3}
             />
-            <Button onClick={handleAddComment} disabled={!newComment.trim()}>
-              <Send className="h-4 w-4 mr-2" />
-              Enviar Comentário
+            <Button onClick={handleAddComment} disabled={!newComment.trim() || submittingComment}>
+              {submittingComment ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Send className="mr-2 h-4 w-4" />}
+              Enviar comentário
             </Button>
           </div>
         </CardContent>

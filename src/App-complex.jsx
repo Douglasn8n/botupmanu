@@ -18,7 +18,7 @@ function App() {
   const [searchTerm, setSearchTerm] = useState('')
   const [filterStatus, setFilterStatus] = useState('todos')
   const [filterType, setFilterType] = useState('todos')
-  const [isNewDemandOpen, setIsNewDemandOpen] = useState(false)
+  const [, setIsNewDemandOpen] = useState(false)
   const [selectedDemand, setSelectedDemand] = useState(null)
   const [showNotifications, setShowNotifications] = useState(false)
   const [isAdmin, setIsAdmin] = useState(false) // Toggle para simular modo admin

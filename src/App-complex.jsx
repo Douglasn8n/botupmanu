@@ -6,7 +6,6 @@ import { Input } from '@/components/ui/input.jsx'
 import { Textarea } from '@/components/ui/textarea.jsx'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select.jsx'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs.jsx'
-import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog.jsx'
 import { Label } from '@/components/ui/label.jsx'
 import { Plus, Search, Filter, MessageSquare, Bug, Zap, Clock, CheckCircle, AlertCircle, User, Bell } from 'lucide-react'
 import DemandDetails from './components/DemandDetails.jsx'
@@ -18,7 +17,6 @@ function App() {
   const [searchTerm, setSearchTerm] = useState('')
   const [filterStatus, setFilterStatus] = useState('todos')
   const [filterType, setFilterType] = useState('todos')
-  const [isNewDemandOpen, setIsNewDemandOpen] = useState(false)
   const [selectedDemand, setSelectedDemand] = useState(null)
   const [showNotifications, setShowNotifications] = useState(false)
   const [isAdmin, setIsAdmin] = useState(false) // Toggle para simular modo admin
@@ -128,7 +126,6 @@ function App() {
       ultimaAtualizacao: new Date().toISOString().split('T')[0]
     }
     setDemandas([...demandas, novaDemanda])
-    setIsNewDemandOpen(false)
     event.target.reset()
     setActiveTab('minhas-demandas') // Redirecionar para a lista após criar
   }

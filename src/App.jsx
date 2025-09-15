@@ -8,6 +8,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs.jsx'
 import { Label } from '@/components/ui/label.jsx'
 import { Plus, Search, MessageSquare, Bug, Zap, Clock, CheckCircle, AlertCircle, User, Bell } from 'lucide-react'
+import DemandDetails from './components/DemandDetails.jsx'
 import './App.css'
 
 function App() {
@@ -16,6 +17,7 @@ function App() {
   const [filterStatus, setFilterStatus] = useState('todos')
   const [filterType, setFilterType] = useState('todos')
   const [isAdmin, setIsAdmin] = useState(false)
+  const [selectedDemand, setSelectedDemand] = useState(null)
 
   // Dados de exemplo para as demandas
   const [demandas, setDemandas] = useState([
@@ -126,6 +128,70 @@ function App() {
     setActiveTab('minhas-demandas')
   }
 
+  const handleDemandClick = (demanda) => {
+    setSelectedDemand(demanda)
+  }
+
+  const handleBackToDemands = () => {
+    setSelectedDemand(null)
+  }
+
+  const handleUpdateDemand = (updatedDemand) => {
+    setDemandas(demandas.map(demanda => 
+      demanda.id === updatedDemand.id 
+        ? { ...updatedDemand, ultimaAtualizacao: new Date().toISOString().split('T')[0] }
+        : demanda
+    ))
+    setSelectedDemand(updatedDemand)
+  }
+
+  // Se uma demanda está selecionada, mostrar os detalhes
+  if (selectedDemand) {
+    return (
+      <div className="min-h-screen bg-gray-50">
+        {/* Header */}
+        <header className="bg-white shadow-sm border-b">
+          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+            <div className="flex justify-between items-center h-16">
+              <div className="flex items-center">
+                <MessageSquare className="h-8 w-8 text-blue-600 mr-3" />
+                <h1 className="text-xl font-semibold text-gray-900">Painel de Demandas de Chatbots</h1>
+              </div>
+              <div className="flex items-center space-x-4">
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => setIsAdmin(!isAdmin)}
+                  className={isAdmin ? 'bg-orange-100 text-orange-800' : ''}
+                >
+                  {isAdmin ? 'Modo Admin' : 'Modo Cliente'}
+                </Button>
+                <Button variant="ghost" size="sm" className="relative">
+                  <Bell className="h-4 w-4" />
+                  <span className="absolute -top-1 -right-1 h-3 w-3 bg-red-500 rounded-full text-xs"></span>
+                </Button>
+                <span className="text-sm text-gray-600">Olá, {isAdmin ? 'Desenvolvedor' : 'Cliente'}</span>
+                <div className="h-8 w-8 bg-blue-600 rounded-full flex items-center justify-center">
+                  <User className="h-4 w-4 text-white" />
+                </div>
+              </div>
+            </div>
+          </div>
+        </header>
+
+        {/* Main Content - Detalhes da Demanda */}
+        <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+          <DemandDetails 
+            demand={selectedDemand}
+            onBack={handleBackToDemands}
+            onUpdateDemand={handleUpdateDemand}
+            isAdmin={isAdmin}
+          />
+        </main>
+      </div>
+    )
+  }
+
   return (
     <div className="min-h-screen bg-gray-50">
       {/* Header */}
@@ -209,7 +275,11 @@ function App() {
 
             <div className="grid gap-6">
               {filteredDemandas.map((demanda) => (
-                <Card key={demanda.id} className="hover:shadow-md transition-shadow">
+                <Card 
+                  key={demanda.id} 
+                  className="hover:shadow-md transition-shadow cursor-pointer"
+                  onClick={() => handleDemandClick(demanda)}
+                >
                   <CardHeader>
                     <div className="flex items-start justify-between">
                       <div className="space-y-1">
@@ -230,6 +300,10 @@ function App() {
                         <Badge className={getStatusColor(demanda.status)}>
                           {getStatusIcon(demanda.status)}
                           <span className="ml-1 capitalize">{demanda.status.replace('-', ' ')}</span>
+                        </Badge>
+                        <Badge variant="secondary" className="flex items-center space-x-1">
+                          {getTipoIcon(demanda.tipo)}
+                          <span className="capitalize">{demanda.tipo.replace('-', ' ')}</span>
                         </Badge>
                         <span className="text-sm text-gray-600">Chatbot: {demanda.chatbot}</span>
                       </div>

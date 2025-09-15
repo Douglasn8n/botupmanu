@@ -18,7 +18,6 @@ function App() {
   const [searchTerm, setSearchTerm] = useState('')
   const [filterStatus, setFilterStatus] = useState('todos')
   const [filterType, setFilterType] = useState('todos')
-  const [isNewDemandOpen, setIsNewDemandOpen] = useState(false)
   const [selectedDemand, setSelectedDemand] = useState(null)
   const [showNotifications, setShowNotifications] = useState(false)
   const [isAdmin, setIsAdmin] = useState(false) // Toggle para simular modo admin
@@ -128,7 +127,6 @@ function App() {
       ultimaAtualizacao: new Date().toISOString().split('T')[0]
     }
     setDemandas([...demandas, novaDemanda])
-    setIsNewDemandOpen(false)
     event.target.reset()
     setActiveTab('minhas-demandas') // Redirecionar para a lista após criar
   }

@@ -18,6 +18,7 @@ function App() {
   const [filterType, setFilterType] = useState('todos')
   const [isAdmin, setIsAdmin] = useState(false)
   const [selectedDemand, setSelectedDemand] = useState(null)
+  const [selectedTipoDemanda, setSelectedTipoDemanda] = useState('')
 
   // Dados de exemplo para as demandas
   const [demandas, setDemandas] = useState([
@@ -37,7 +38,7 @@ function App() {
       id: 2,
       titulo: 'Correção no fluxo de pagamento',
       descricao: 'O bot não está processando corretamente os pagamentos via PIX.',
-      tipo: 'correcao-erro',
+      tipo: 'alteracao',
       status: 'novo',
       prioridade: 'urgente',
       cliente: 'Maria Santos',
@@ -85,6 +86,7 @@ function App() {
     switch (tipo) {
       case 'nova-funcionalidade': return <Plus className="h-4 w-4" />
       case 'correcao-erro': return <Bug className="h-4 w-4" />
+      case 'alteracao': return <Bug className="h-4 w-4" />
       case 'otimizacao': return <Zap className="h-4 w-4" />
       default: return <MessageSquare className="h-4 w-4" />
     }
@@ -111,6 +113,8 @@ function App() {
   const handleNewDemand = (event) => {
     event.preventDefault()
     const formData = new FormData(event.target)
+    
+    // Construir objeto base da demanda
     const novaDemanda = {
       id: demandas.length + 1,
       titulo: formData.get('titulo'),
@@ -119,12 +123,23 @@ function App() {
       status: 'novo',
       prioridade: formData.get('prioridade'),
       cliente: 'Usuário Atual',
-      chatbot: formData.get('chatbot'),
+      chatbot: 'Sistema Geral', // Valor padrão já que removemos o campo
       dataCreacao: new Date().toISOString().split('T')[0],
       ultimaAtualizacao: new Date().toISOString().split('T')[0]
     }
+
+    // Adicionar campos específicos baseados no tipo
+    if (formData.get('tipo') === 'correcao-erro') {
+      novaDemanda.qualErro = formData.get('qualErro')
+      novaDemanda.comoDeveFicarErro = formData.get('comoDeveFicarErro')
+    } else if (formData.get('tipo') === 'alteracao') {
+      novaDemanda.comoEstaAgora = formData.get('comoEstaAgora')
+      novaDemanda.comoDeveFicarAlteracao = formData.get('comoDeveFicarAlteracao')
+    }
+
     setDemandas([...demandas, novaDemanda])
     event.target.reset()
+    setSelectedTipoDemanda('') // Resetar o tipo selecionado
     setActiveTab('minhas-demandas')
   }
 
@@ -268,6 +283,7 @@ function App() {
                   <SelectItem value="todos">Todos os tipos</SelectItem>
                   <SelectItem value="nova-funcionalidade">Nova Funcionalidade</SelectItem>
                   <SelectItem value="correcao-erro">Correção de Erro</SelectItem>
+                  <SelectItem value="alteracao">Alteração</SelectItem>
                   <SelectItem value="otimizacao">Otimização</SelectItem>
                 </SelectContent>
               </Select>
@@ -349,16 +365,21 @@ function App() {
                     />
                   </div>
 
-                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <div className="space-y-2">
                       <Label htmlFor="tipo">Tipo de Demanda</Label>
-                      <Select name="tipo" required>
+                      <Select 
+                        name="tipo" 
+                        required 
+                        onValueChange={(value) => setSelectedTipoDemanda(value)}
+                      >
                         <SelectTrigger>
                           <SelectValue placeholder="Selecione o tipo" />
                         </SelectTrigger>
                         <SelectContent>
                           <SelectItem value="nova-funcionalidade">Nova Funcionalidade</SelectItem>
                           <SelectItem value="correcao-erro">Correção de Erro</SelectItem>
+                          <SelectItem value="alteracao">Alteração</SelectItem>
                           <SelectItem value="otimizacao">Otimização</SelectItem>
                         </SelectContent>
                       </Select>
@@ -378,22 +399,66 @@ function App() {
                         </SelectContent>
                       </Select>
                     </div>
-
-                    <div className="space-y-2">
-                      <Label htmlFor="chatbot">Chatbot</Label>
-                      <Select name="chatbot" required>
-                        <SelectTrigger>
-                          <SelectValue placeholder="Selecione o chatbot" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="Bot Vendas">Bot Vendas</SelectItem>
-                          <SelectItem value="Bot E-commerce">Bot E-commerce</SelectItem>
-                          <SelectItem value="Bot Atendimento">Bot Atendimento</SelectItem>
-                          <SelectItem value="Bot Suporte">Bot Suporte</SelectItem>
-                        </SelectContent>
-                      </Select>
-                    </div>
                   </div>
+
+                  {/* Campos condicionais baseados no tipo de demanda */}
+                  {selectedTipoDemanda === 'correcao-erro' && (
+                    <div className="space-y-4 p-4 bg-red-50 rounded-lg border border-red-200">
+                      <h4 className="font-medium text-red-800 flex items-center">
+                        <Bug className="h-4 w-4 mr-2" />
+                        Detalhes da Correção de Erro
+                      </h4>
+                      <div className="space-y-2">
+                        <Label htmlFor="qual-erro">Qual é o erro?</Label>
+                        <Textarea
+                          id="qual-erro"
+                          name="qualErro"
+                          placeholder="Descreva detalhadamente o erro que está ocorrendo"
+                          rows={3}
+                          required
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <Label htmlFor="como-deve-ficar-erro">Como deve ficar?</Label>
+                        <Textarea
+                          id="como-deve-ficar-erro"
+                          name="comoDeveFicarErro"
+                          placeholder="Descreva como o sistema deve funcionar corretamente"
+                          rows={3}
+                          required
+                        />
+                      </div>
+                    </div>
+                  )}
+
+                  {selectedTipoDemanda === 'alteracao' && (
+                    <div className="space-y-4 p-4 bg-blue-50 rounded-lg border border-blue-200">
+                      <h4 className="font-medium text-blue-800 flex items-center">
+                        <Bug className="h-4 w-4 mr-2" />
+                        Detalhes da Alteração
+                      </h4>
+                      <div className="space-y-2">
+                        <Label htmlFor="como-esta-agora">Como está agora?</Label>
+                        <Textarea
+                          id="como-esta-agora"
+                          name="comoEstaAgora"
+                          placeholder="Descreva como o sistema funciona atualmente"
+                          rows={3}
+                          required
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <Label htmlFor="como-deve-ficar-alteracao">Como deve ficar?</Label>
+                        <Textarea
+                          id="como-deve-ficar-alteracao"
+                          name="comoDeveFicarAlteracao"
+                          placeholder="Descreva como o sistema deve funcionar após a alteração"
+                          rows={3}
+                          required
+                        />
+                      </div>
+                    </div>
+                  )}
 
                   <Button type="submit" className="w-full">
                     <Plus className="h-4 w-4 mr-2" />

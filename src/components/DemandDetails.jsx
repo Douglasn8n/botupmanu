@@ -87,6 +87,7 @@ const DemandDetails = ({ demand, onBack, onUpdateDemand, isAdmin = false }) => {
     switch (tipo) {
       case 'nova-funcionalidade': return <Plus className="h-4 w-4" />
       case 'correcao-erro': return <Bug className="h-4 w-4" />
+      case 'alteracao': return <Bug className="h-4 w-4" />
       case 'otimizacao': return <Zap className="h-4 w-4" />
       default: return <MessageSquare className="h-4 w-4" />
     }
@@ -254,6 +255,7 @@ const DemandDetails = ({ demand, onBack, onUpdateDemand, isAdmin = false }) => {
                     <SelectContent>
                       <SelectItem value="nova-funcionalidade">Nova Funcionalidade</SelectItem>
                       <SelectItem value="correcao-erro">Correção de Erro</SelectItem>
+                      <SelectItem value="alteracao">Alteração</SelectItem>
                       <SelectItem value="otimizacao">Otimização</SelectItem>
                     </SelectContent>
                   </Select>
